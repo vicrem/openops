@@ -41,6 +41,33 @@ spec:
         runAsNonRoot: true
         runAsGroup: 33
         runAsUser: 33
+      initContainers:
+      - name: init
+        image: curlimages/curl:latest
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args:
+        - echo "Checking if App service is running..";
+          APP_SERVICE=$(curl -so /dev/stderr --write-out "%{http_code}" "$APP_BACKEND_URL/v1/flags");
+
+          while [ $APP_SERVICE != 200 ];
+          do 
+            echo "Waiting for App service to respond..";
+            sleep 2;
+          done;
+          echo "App service responded. Exiting!";
+        env:
+        - name: APP_BACKEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: APP_BACKEND_URL
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
       containers:
       - name: openops-nginx
         image: nginxinc/nginx-unprivileged:1.25
@@ -84,29 +111,9 @@ spec:
           subPath: default.conf
         - mountPath: /tmp
           name: nginxtmp
-        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-          name: kube-api-access
-          readOnly: true
       volumes:
       - name: nginx-default
         configMap:
           name: nginx-default
       - name: nginxtmp
         emptyDir: {}
-      - name: kube-api-access
-        projected:
-          sources:
-          - serviceAccountToken:
-              path: token
-              expirationSeconds: 3600
-          - configMap:
-              items:
-              - key: ca.crt
-                path: ca.crt
-              name: kube-root-ca.crt
-          - downwardAPI:
-              items:
-              - fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.namespace
-                path: namespace

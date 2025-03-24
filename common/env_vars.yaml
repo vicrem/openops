@@ -33,8 +33,7 @@ data:
   # Redis
   REDIS_DB: '0'
   REDIS_PORT: '6379'
-  REDIS_URL: redis://redis.openops.svc.cluster.local
-  REDIS_WITHOUT_PROTO: redis.openops.svc.cluster.local
+  REDIS_URL: redis.openops.svc.cluster.local
   QUEUE_MODE: REDIS
 
 

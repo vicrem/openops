@@ -39,12 +39,12 @@ spec:
       automountServiceAccountToken: false
       initContainers:
       - name: init
-        image: busybox:latest
+        image: curlimages/curl:latest
         imagePullPolicy: Always
         command: ["/bin/sh", "-c"]
         args:
         - echo "Checking if PostgreSQL and Redis is ready..";
-          until ((nc $DATABASE_HOST $DATABASE_PORT && nc $(echo ${REDIS_URL##*/}) $REDIS_PORT));
+          until ((nc $DATABASE_HOST $DATABASE_PORT && nc $REDIS_URL $REDIS_PORT));
           do 
             echo "Waiting for PostgreSQL and Redis to respond..";
             sleep 2;
@@ -165,11 +165,13 @@ spec:
             secretKeyRef:
               name: openops-secrets
               key: database_password
-        - name: REDIS_URL
+        - name: REDIS_HOST
           valueFrom:
             configMapKeyRef:
               name: envvars
               key: REDIS_URL
+        - name: REDIS_URL
+          value: redis://$(REDIS_HOST)
         - name: REDIS_USER
           valueFrom:
             secretKeyRef:
