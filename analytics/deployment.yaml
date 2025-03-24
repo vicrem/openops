@@ -1,0 +1,196 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openops-analytics
+  namespace: openops
+  labels:
+    app: openops-analytics
+    app.kubernetes.io/name: openops-analytics
+    app.kubernetes.io/instance: openops-analytics
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: "50%"
+  selector:
+    matchLabels:
+      app: openops-analytics
+      app.kubernetes.io/name: openops-analytics
+      app.kubernetes.io/instance: openops-analytics
+  template:
+    metadata:
+      labels:
+        app: openops-analytics
+        app.kubernetes.io/name: openops-analytics
+        app.kubernetes.io/instance: openops-analytics
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: openops-analytics
+      priorityClassName: high-priority-apps
+      serviceAccountName: openops
+      automountServiceAccountToken: false
+      initContainers:
+      - name: init
+        image: busybox:latest
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args:
+        - echo "Checking if PostgreSQL and Redis is ready..";
+          until ((nc $DATABASE_HOST $DATABASE_PORT && nc $(echo ${REDIS_URL##*/}) $REDIS_PORT));
+          do 
+            echo "Waiting for PostgreSQL and Redis to respond..";
+            sleep 2;
+          done;
+          echo "PostgreSQL and Redis responded. Exiting!";
+        env:
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_PORT
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_PORT
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_URL
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+      containers:
+      - name: openops-analytics
+        image: public.ecr.aws/openops/openops-analytics:0.12.16
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8088
+          name: tcp-analytics
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 500m
+            memory: 2048Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        env:
+        - name: GUNICORN_LOGLEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: GUNICORN_LOGLEVEL
+        - name: DATABASE_DB
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: ANALYTICS_PG_DATABASE
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_PORT
+        - name: DATABASE_USER
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: database_user
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: database_password
+        - name: DATABASE_DIALECT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: ANALYTICS_PG_DB_DIALECT
+        - name: DATABASE_HOST_ALT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_HOST
+        - name: OPS_ANALYTICS_PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: FRONTEND_URL
+        - name: OPS_ANALYTICS_PRIVATE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: ANALYTICS_BACKEND_URL
+        - name: OPS_QUEUE_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: QUEUE_MODE
+        - name: OPS_REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_URL
+        - name: OPS_REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_PORT
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: admin_password
+        - name: POWERUSER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: superuser_password
+        - name: SUPERSET_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: encryption_key
+        - name: SUPERSET_FEATURE_ALLOW_ADHOC_SUBQUERY
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: SUPERSET_FEATURE_ALLOW_ADHOC_SUBQUERY
+        livenessProbe:
+          tcpSocket:
+            port: 8088
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        readinessProbe:
+          tcpSocket:
+            port: 8088
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5

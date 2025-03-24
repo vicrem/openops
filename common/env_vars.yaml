@@ -1,0 +1,74 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: envvars
+  namespace: openops
+data:
+  # Frontend url
+  FRONTEND_URL: https://openops.vicrem.se
+  ## To prevent mixed content
+  TABLE_FRONTEND_URL: https://openops-tables.vicrem.se
+
+
+  # Backend url
+  APP_BACKEND_URL: http://app.openops.svc.cluster.local/api/
+  TABLES_BACKEND_URL: http://tables.openops.svc.cluster.local
+  ANALYTICS_BACKEND_URL: http://analytics.openops.svc.cluster.local
+  ENGINE_BACKEND_URL: http://engine.openops.svc.cluster.local/execute
+
+
+  # Auth (username)
+  OPS_OPENOPS_ADMIN_EMAIL: admin@vicrem.se
+
+
+  # PostgreSQL
+  POSTGRES_HOST: postgres.openops.svc.cluster.local
+  POSTGRES_PORT: '5432'
+  TABLE_PG_DATABASE: tables
+  ANALYTICS_PG_DATABASE: analytics
+  ANALYTICS_PG_DB_DIALECT: postgresql
+
+
+  # Redis
+  REDIS_DB: '0'
+  REDIS_PORT: '6379'
+  REDIS_URL: redis://redis.openops.svc.cluster.local
+  REDIS_WITHOUT_PROTO: redis.openops.svc.cluster.local
+  QUEUE_MODE: REDIS
+
+
+
+  # Table 
+  BASEROW_EXTRA_ALLOWED_HOSTS: '*'
+  BASEROW_REFRESH_TOKEN_LIFETIME_HOURS: '168'
+  BASEROW_ACCESS_TOKEN_LIFETIME_MINUTES: '60'
+
+  MIGRATE_ON_STARTUP: 'true'
+  DISABLE_VOLUME_CHECK: 'yes'
+  SYNC_TEMPLATES_ON_STARTUP: 'false'
+
+
+  # Analytics
+  GUNICORN_LOGLEVEL: debug
+  SUPERSET_FEATURE_ALLOW_ADHOC_SUBQUERY: 'true'
+
+
+  # App
+  OPS_BLOCKS_SOURCE: FILE
+  OPS_BLOCKS_SYNC_MODE: NONE
+  OPS_WEBHOOK_TIMEOUT_SECONDS: '30'
+  OPS_TRIGGER_DEFAULT_POLL_INTERVAL: '1'
+
+
+  OPS_LOG_LEVEL: info
+  OPS_LOGZIO_TOKEN: ''
+  OPS_LOG_PRETTY: 'false'
+  OPS_LOGZIO_METRICS_TOKEN: ''
+  OPS_TELEMETRY_COLLECTOR_URL: https://telemetry.openops.com/save
+
+
+  # Engine
+  OPS_BASE_CODE_DIRECTORY: /tmp/codes
+  OPS_EXECUTION_MODE: SANDBOX_CODE_ONLY
+

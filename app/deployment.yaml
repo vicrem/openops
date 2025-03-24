@@ -1,0 +1,273 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openops-app
+  namespace: openops
+  labels:
+    app: openops-app
+    app.kubernetes.io/name: openops-app
+    app.kubernetes.io/instance: openops-app
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: "50%"
+  selector:
+    matchLabels:
+      app: openops-app
+      app.kubernetes.io/name: openops-app
+      app.kubernetes.io/instance: openops-app
+  template:
+    metadata:
+      labels:
+        app: openops-app
+        app.kubernetes.io/name: openops-app
+        app.kubernetes.io/instance: openops-app
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: openops-app
+      priorityClassName: high-priority-apps
+      serviceAccountName: openops
+      automountServiceAccountToken: false
+      securityContext:
+        sysctls:
+        - name: "net.ipv4.ip_unprivileged_port_start"
+          value: "80"
+        runAsNonRoot: true
+        runAsGroup: 65534
+        runAsUser: 65534
+      initContainers:
+      - name: init
+        image: curlimages/curl:latest
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args:
+        - echo "Checking if Table service is running..";
+          while [ $(curl -so /dev/stderr --write-out "%{http_code}" "$TABLES_BACKEND_URL/openops-tables/api/_health/") != 200 ];
+          do 
+            echo "Waiting for Table service to respond..";
+            sleep 2;
+          done;
+          echo "Table service responded. Exiting!";
+        env:
+        - name: TABLES_BACKEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: TABLES_BACKEND_URL
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+      containers:
+      - name: openops-app
+        image: public.ecr.aws/openops/openops-app:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          name: tcp-app
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1024Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        env:
+        - name: OPS_COMPONENT
+          value: app
+        - name: OPS_BLOCKS_SOURCE
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_BLOCKS_SOURCE
+        - name: OPS_BLOCKS_SYNC_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_BLOCKS_SYNC_MODE
+        - name: OPS_WEBHOOK_TIMEOUT_SECONDS
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_WEBHOOK_TIMEOUT_SECONDS
+        - name: OPS_TRIGGER_DEFAULT_POLL_INTERVAL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_TRIGGER_DEFAULT_POLL_INTERVAL
+        - name: OPS_LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_LOG_LEVEL
+        - name: OPS_LOGZIO_TOKEN
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_LOGZIO_TOKEN
+        - name: OPS_LOG_PRETTY
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_LOG_PRETTY
+        - name: OPS_LOGZIO_METRICS_TOKEN
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_LOGZIO_METRICS_TOKEN
+        - name: OPS_TELEMETRY_COLLECTOR_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_TELEMETRY_COLLECTOR_URL
+        - name: OPS_FRONTEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: FRONTEND_URL
+        - name: OPS_ENGINE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: ENGINE_BACKEND_URL
+        - name: OPS_OPENOPS_TABLES_DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: TABLE_PG_DATABASE
+        - name: OPS_OPENOPS_TABLES_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: TABLES_BACKEND_URL
+        - name: OPS_OPENOPS_TABLES_PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: TABLE_FRONTEND_URL
+        - name: OPS_OPENOPS_ADMIN_EMAIL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_OPENOPS_ADMIN_EMAIL
+        - name: OPS_OPENOPS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: admin_password
+        - name: OPS_ANALYTICS_PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: FRONTEND_URL
+        - name: OPS_ANALYTICS_PRIVATE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: ANALYTICS_BACKEND_URL
+        - name: OPS_ANALYTICS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: admin_password
+        - name: OPS_POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_HOST
+        - name: OPS_POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_PORT
+        - name: OPS_POSTGRES_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: TABLE_PG_DATABASE
+        - name: OPS_POSTGRES_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: database_user
+        - name: OPS_POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: database_password
+        - name: OPS_QUEUE_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: QUEUE_MODE
+        - name: OPS_REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_PORT
+        - name: OPS_REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_WITHOUT_PROTO
+        - name: OPS_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: jwt_secret
+        - name: OPS_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: encryption_key
+        livenessProbe:
+          tcpSocket:
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        readinessProbe:
+          tcpSocket:
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+        volumeMounts:
+        - mountPath: /var/lib/nginx/
+          name: nginxvar
+        - mountPath: /run
+          name: nginxrun
+        - mountPath: /var/log/nginx/
+          name: nginxlogs
+      volumes:
+      - name: nginx-default
+        configMap:
+          name: nginx-default
+      - name: nginxvar
+        emptyDir: {}
+      - name: nginxrun
+        emptyDir: {}
+      - name: nginxlogs
+        emptyDir: {}

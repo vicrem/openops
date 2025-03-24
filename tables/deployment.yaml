@@ -1,0 +1,198 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openops-tables
+  namespace: openops
+  labels:
+    app: openops-tables
+    app.kubernetes.io/name: openops-tables
+    app.kubernetes.io/instance: openops-tables
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: "50%"
+  selector:
+    matchLabels:
+      app: openops-tables
+      app.kubernetes.io/name: openops-tables
+      app.kubernetes.io/instance: openops-tables
+  template:
+    metadata:
+      labels:
+        app: openops-tables
+        app.kubernetes.io/name: openops-tables
+        app.kubernetes.io/instance: openops-tables
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: openops-tables
+      priorityClassName: high-priority-apps
+      serviceAccountName: openops
+      automountServiceAccountToken: false
+      initContainers:
+      - name: init
+        image: busybox:latest
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args:
+        - echo "Checking if PostgreSQL and Redis is ready..";
+          until ((nc $DATABASE_HOST $DATABASE_PORT && nc $(echo ${REDIS_URL##*/}) $REDIS_PORT));
+          do 
+            echo "Waiting for PostgreSQL and Redis to respond..";
+            sleep 2;
+          done;
+          echo "PostgreSQL and Redis responded. Exiting!";
+        env:
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_PORT
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_PORT
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_URL
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+      containers:
+      - name: openops-tables
+        image: public.ecr.aws/openops/openops-tables:0.1.8
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          name: tcp-tables
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2048Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        env:
+        - name: BASEROW_EXTRA_ALLOWED_HOSTS
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: BASEROW_EXTRA_ALLOWED_HOSTS
+        - name: BASEROW_REFRESH_TOKEN_LIFETIME_HOURS
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: BASEROW_REFRESH_TOKEN_LIFETIME_HOURS
+        - name: BASEROW_ACCESS_TOKEN_LIFETIME_MINUTES
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: BASEROW_ACCESS_TOKEN_LIFETIME_MINUTES
+        - name: MIGRATE_ON_STARTUP
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: MIGRATE_ON_STARTUP
+        - name: DISABLE_VOLUME_CHECK
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: DISABLE_VOLUME_CHECK
+        - name: SYNC_TEMPLATES_ON_STARTUP
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: SYNC_TEMPLATES_ON_STARTUP
+        - name: BASEROW_PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: TABLE_FRONTEND_URL
+        - name: BASEROW_PRIVATE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: TABLES_BACKEND_URL
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: encryption_key
+        - name: BASEROW_JWT_SIGNING_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: jwt_secret
+        - name: DATABASE_NAME
+          value: tables
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: POSTGRES_PORT
+        - name: DATABASE_USER
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: database_user
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: database_password
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_URL
+        - name: REDIS_USER
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: redis_user
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: redis_password
+        livenessProbe:
+          tcpSocket:
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        readinessProbe:
+          tcpSocket:
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5

@@ -1,0 +1,67 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-default
+  namespace: openops
+data:
+  default.conf: |-
+    server {
+      listen                                             8080;
+
+      server_name                                   localhost;
+      server_tokens                                       off;
+
+      ssi                                                 off;
+      large_client_header_buffers                       4 16k;
+
+      client_max_body_size                                10m;
+      client_body_buffer_size                              1K;
+      client_header_buffer_size                            1k;
+
+      add_header X-XSS-Protection             "1; mode=block";
+      add_header Referrer-Policy "no-referrer-when-downgrade";
+
+
+      location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_pass http://app.openops.svc;
+      }
+
+      location /api/socket.io {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_pass http://app.openops.svc/socket.io;
+      }
+
+      location /openops-analytics/ {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_pass http://analytics.openops.svc;
+      }
+
+      location /openops-tables/ws/core {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_pass http://tables.openops.svc/openops-tables/ws/core;
+      }
+
+      location /openops-tables/ {
+        client_max_body_size 512m;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_pass http://tables.openops.svc;
+      }
+    }

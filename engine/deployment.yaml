@@ -1,0 +1,73 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openops-engine
+  namespace: openops
+  labels:
+    app: openops-engine
+    app.kubernetes.io/name: openops-engine
+    app.kubernetes.io/instance: openops-engine
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: "50%"
+  selector:
+    matchLabels:
+      app: openops-engine
+      app.kubernetes.io/name: openops-engine
+      app.kubernetes.io/instance: openops-engine
+  template:
+    metadata:
+      labels:
+        app: openops-engine
+        app.kubernetes.io/name: openops-engine
+        app.kubernetes.io/instance: openops-engine
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: openops-engine
+      priorityClassName: high-priority-apps
+      serviceAccountName: openops
+      automountServiceAccountToken: false
+      containers:
+      - name: openops-engine
+        image: public.ecr.aws/openops/openops-engine:latest
+        command: ["/bin/sh", "-c", "cp -r /var/tmp-base/. /tmp/ && node main.js"]
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3005
+          name: tcp-engine
+          protocol: TCP
+        env:
+        - name: OPS_COMPONENT
+          value: engine
+        - name: OPS_BASE_CODE_DIRECTORY
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_BASE_CODE_DIRECTORY
+        - name: OPS_EXECUTION_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: OPS_EXECUTION_MODE
+        - name: OPS_SERVER_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: APP_BACKEND_URL
+        resources:
+          limits:
+            cpu: 500m
+            memory: 2048Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi

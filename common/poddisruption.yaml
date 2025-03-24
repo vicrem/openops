@@ -1,0 +1,56 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+  namespace: openops
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: openops-redis
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tables-pdb
+  namespace: openops
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: openops-tables
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: app-pdb
+  namespace: openops
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: openops-app
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: engine-pdb
+  namespace: openops
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: openops-engine
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nginx-pdb
+  namespace: openops
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: openops-nginx
+

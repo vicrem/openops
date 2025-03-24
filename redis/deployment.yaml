@@ -1,0 +1,99 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openops-redis
+  namespace: openops
+  labels:
+    app: openops-redis
+    app.kubernetes.io/name: openops-redis
+    app.kubernetes.io/instance: openops-redis
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: "50%"
+  selector:
+    matchLabels:
+      app: openops-redis
+      app.kubernetes.io/name: openops-redis
+      app.kubernetes.io/instance: openops-redis
+  template:
+    metadata:
+      labels:
+        app: openops-redis
+        app.kubernetes.io/name: openops-redis
+        app.kubernetes.io/instance: openops-redis
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: openops-redis
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+      priorityClassName: high-priority-apps
+      serviceAccountName: openops
+      automountServiceAccountToken: false
+      containers:
+      - name: openops-redis
+        image: redis:7.4.2-alpine
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 6379
+          name: tcp-redis
+          protocol: TCP
+        env:
+        - name: REDIS_ARGS
+          value: "--requirepass $(REDIS_PASSWORD) --user $(REDIS_USER)"
+        - name: REDIS_USER
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: redis_user
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: redis_password
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -h $HOSTNAME --pass $REDIS_PASSWORD ping 2>/dev/null
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -h $HOSTNAME --pass $REDIS_PASSWORD ping 2>/dev/null
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1024Mi
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
