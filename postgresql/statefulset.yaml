@@ -1,0 +1,99 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: openops
+  labels:
+    app: postgres
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/instance: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/instance: postgres
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: postgres
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+      priorityClassName: high-priority-apps
+      serviceAccountName: openops
+      automountServiceAccountToken: false
+      containers:
+      - name: postgres
+        image: postgres:16
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5432
+          name: tcp-postgres
+          protocol: TCP
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: database_user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-secrets
+              key: database_password
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "${POSTGRES_USER}" -h 127.0.0.1 -p 5432
+          failureThreshold: 6
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "${POSTGRES_USER}" -h 127.0.0.1 -p 5432
+          failureThreshold: 6
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2048Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+        volumeMounts:
+        - mountPath: /docker-entrypoint-initdb.d
+          name: postgres-init-db
+      volumes:
+      - name: postgres-init-db
+        configMap:
+          name: postgres-init-db
+          defaultMode: 0755
