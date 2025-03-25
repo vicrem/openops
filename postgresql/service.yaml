@@ -5,7 +5,7 @@ metadata:
   name: postgres
   namespace: openops
   labels:
-    app: postgres
+    app: openops-postgres
 spec:
   type: ClusterIP
   ports:
@@ -14,4 +14,4 @@ spec:
     protocol: TCP
     name: tcp-postgres
   selector:
-    app: postgres
+    app: openops-postgres

@@ -2,25 +2,25 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: postgres
+  name: openops-postgres
   namespace: openops
   labels:
-    app: postgres
-    app.kubernetes.io/name: postgres
-    app.kubernetes.io/instance: postgres
+    app: openops-postgres
+    app.kubernetes.io/name: openops-postgres
+    app.kubernetes.io/instance: openops-postgres
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: postgres
-      app.kubernetes.io/name: postgres
-      app.kubernetes.io/instance: postgres
+      app: openops-postgres
+      app.kubernetes.io/name: openops-postgres
+      app.kubernetes.io/instance: openops-postgres
   template:
     metadata:
       labels:
-        app: postgres
-        app.kubernetes.io/name: postgres
-        app.kubernetes.io/instance: postgres
+        app: openops-postgres
+        app.kubernetes.io/name: openops-postgres
+        app.kubernetes.io/instance: openops-postgres
     spec:
       topologySpreadConstraints:
       - maxSkew: 1
@@ -28,7 +28,7 @@ spec:
         whenUnsatisfiable: ScheduleAnyway
         labelSelector:
           matchLabels:
-            app: postgres
+            app: openops-postgres
       securityContext:
         runAsNonRoot: true
         runAsUser: 999
@@ -37,7 +37,7 @@ spec:
       serviceAccountName: openops
       automountServiceAccountToken: false
       containers:
-      - name: postgres
+      - name: openops-postgres
         image: postgres:16
         imagePullPolicy: Always
         ports:
