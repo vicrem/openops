@@ -43,17 +43,13 @@ spec:
         imagePullPolicy: Always
         command: ["/bin/sh", "-c"]
         args:
-        - echo "Checking if PostgreSQL and Tables service is ready..";
-
-          PG_ISRUNNING=$(nc $DATABASE_HOST $DATABASE_PORT);
-          TABLE_SERVICE=$(curl -so /dev/stderr --write-out "%{http_code}" "$TABLES_BACKEND_URL/openops-tables/api/_health/");
-
-          while [[ $TABLE_SERVICE != 200 && ! -e $PG_ISRUNNING ]];
+        - echo "Checking if Tables service is ready..";
+          while [ $(curl -so /dev/stderr --write-out "%{http_code}" "$TABLES_BACKEND_URL/openops-tables/api/_health/") != 200 ];
           do 
-            echo "Waiting for PostgreSQL and Tables service to respond..";
+            echo "Waiting for Tables service to respond..";
             sleep 2;
           done;
-          echo "PostgreSQL and Tables service responded. Exiting!";
+          echo "Tables service responded. Exiting!";
         env:
         - name: DATABASE_HOST
           valueFrom:
@@ -97,6 +93,16 @@ spec:
             configMapKeyRef:
               name: envvars
               key: GUNICORN_LOGLEVEL
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_PORT
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: REDIS_URL
         - name: DATABASE_DB
           valueFrom:
             configMapKeyRef:
