@@ -50,21 +50,30 @@ spec:
         imagePullPolicy: Always
         command: ["/bin/sh", "-c"]
         args:
-        - echo "Checking if Table service is running..";
-          TABLE_SERVICE=$(curl -so /dev/stderr --write-out "%{http_code}" "$TABLES_BACKEND_URL/openops-tables/api/_health/");
-
-          while [ $TABLE_SERVICE != 200 ];
+        - echo "Checking if Table and Analytics service is running..";
+          while [ $(curl -so /dev/stderr --write-out "%{http_code}" "$TABLES_BACKEND_URL/openops-tables/api/_health/") != 200 ];
           do 
             echo "Waiting for Table service to respond..";
             sleep 2;
           done;
-          echo "Table service responded. Exiting!";
+
+          while [ $(curl -Lso /dev/stderr --write-out "%{http_code}" "$ANALYTICS_BACKEND_URL") != 200 ];
+          do 
+            echo "Waiting for Analytics service to respond..";
+            sleep 2;
+          done;
+          echo "Table and Analytics service responded. Exiting!";
         env:
         - name: TABLES_BACKEND_URL
           valueFrom:
             configMapKeyRef:
               name: envvars
               key: TABLES_BACKEND_URL
+        - name: ANALYTICS_BACKEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: envvars
+              key: ANALYTICS_BACKEND_URL
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false
