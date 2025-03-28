@@ -1,0 +1,32 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openops.fullname" . }}-global-configmap
+  labels:
+    {{- include "openops.labels" . | nindent 4 }}
+data:
+  {{- $frontendUrl := printf "%s://%s" (include "scheme" .) .Values.openops.ingress.url | required "A valid .Values.openops.ingress.url entry required!" }}
+  FRONTEND_URL: {{ $frontendUrl | quote }}
+
+  # Redis
+  {{- $redisConf := include "redisConf" . | fromJson }}
+  {{- range $key, $value := $redisConf }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  OPS_QUEUE_MODE: "REDIS"
+
+  # PostgreSQL
+  {{- $postgresConf := include "postgresConf" . | fromJson }}
+  {{- range $key, $value := $postgresConf }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  DATABASE_NAME: tables
+  DATABASE_DB: analytics
+  DATABASE_DIALECT: postgresql
+
+  # Backend url
+  APP_BACKEND_URL: {{ printf "http://%s-app.%s.svc/api/" .Release.Name .Release.Namespace }}
+  TABLES_BACKEND_URL: {{ printf "http://%s-tables.%s.svc" .Release.Name .Release.Namespace }}
+  ANALYTICS_BACKEND_URL: {{ printf "http://%s-analytics.%s.svc" .Release.Name .Release.Namespace }}
+  ENGINE_BACKEND_URL: {{ printf "http://%s-engine.%s.svc/execute" .Release.Name .Release.Namespace }}

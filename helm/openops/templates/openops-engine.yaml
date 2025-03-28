@@ -1,0 +1,174 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openops.fullname" . }}-engine-configmap
+  labels:
+    {{- include "openops.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.openops.engine.environment }}
+    {{ $key }}: {{ $value | quote }}
+  {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openops.fullname" . }}-engine
+  labels:
+    app: {{ include "openops.fullname" . }}-engine
+    {{- include "openops.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.openops.engine.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: "50%"
+  selector:
+    matchLabels:
+      app: {{ include "openops.fullname" . }}-engine
+      {{- include "openops.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "openops.fullname" . }}-engine
+        {{- include "openops.labels" . | nindent 8 }}
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: {{ include "openops.fullname" . }}-engine
+      serviceAccountName: {{ include "openops.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.openops.serviceAccount.automount }}
+      {{- with .Values.openops.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsGroup: 65534
+        runAsUser: 65534
+      initContainers:
+      - name: init
+        image: "{{ .Values.openops.initContainer.image }}:{{ .Values.openops.initContainer.tag }}"
+        imagePullPolicy: {{ .Values.openops.initContainer.imagePullPolicy }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - echo "Checking if App service is running..";
+          while [ $(curl -so /dev/stderr --write-out "%{http_code}" "$APP_BACKEND_URL/v1/flags") != 200 ];
+          do 
+            echo "Waiting for App service to respond..";
+            sleep 2;
+          done;
+          echo "App service responded. Exiting!";
+        envFrom:
+        - configMapRef:
+            name: {{ include "openops.fullname" . }}-global-configmap
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+      containers:
+      - name: {{ include "openops.fullname" . }}-engine
+        image: "{{ .Values.openops.engine.image }}:{{ .Values.openops.engine.tag }}"
+        command: ["/bin/bash", "-c", "cp -r /var/tmp-base/ /tmp/ && node main.js"]
+        imagePullPolicy: {{ .Values.openops.engine.imagePullPolicy }}
+        ports:
+        - name: tcp-engine
+          containerPort: 3005
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: {{ include "openops.fullname" . }}-engine-configmap
+        env:
+        - name: OPS_SERVER_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: APP_BACKEND_URL
+        - name: OPS_REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: REDIS_PORT
+        - name: OPS_REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: REDIS_URL
+        - name: OPS_REDIS_USER
+          valueFrom:
+            secretKeyRef:
+              name: redis-creds
+              key: redis_username
+        - name: OPS_REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-creds
+              key: redis_password
+        resources:
+          {{- toYaml .Values.openops.engine.resources | nindent 10 }}
+        readinessProbe:
+          tcpSocket:
+            port: 3005
+          {{- toYaml  .Values.openops.readinessProbe | nindent 10 }}
+        livenessProbe:
+          tcpSocket:
+            port: 3005
+          {{- toYaml  .Values.openops.livenessProbe | nindent 10 }}
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+        volumeMounts:
+        - name: emptydir
+          mountPath: /tmp
+        {{- if .Values.openops.engine.persistence.existingClaim }}
+        - name: engine-data
+          mountPath: {{ .Values.openops.engine.persistence.mountPath }}
+        {{- end }}
+      volumes:
+      - name: emptydir
+        emptyDir: {}
+      {{- if .Values.openops.engine.persistence.existingClaim }}
+      - name: engine-data
+        persistentVolumeClaim:
+          claimName: {{ .Values.openops.engine.persistence.existingClaim }}
+      {{- end }}
+      {{- with .Values.openops.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.openops.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.openops.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- if not .Values.openops.ingress.controller.istio.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openops.fullname" . }}-engine
+  labels:
+    app: {{ include "openops.fullname" . }}-engine
+    {{- include "openops.labels" . | nindent 4 }}
+spec:
+  ports:
+  - port: 80
+    targetPort: 3005
+    protocol: TCP
+    name: tcp-engine
+  selector:
+    app: {{ include "openops.fullname" . }}-engine
+{{- end }}

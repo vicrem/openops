@@ -1,0 +1,187 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openops.fullname" . }}-analytics-configmap
+  labels:
+    {{- include "openops.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.openops.analytics.environment }}
+    {{ $key }}: {{ $value | quote }}
+  {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openops.fullname" . }}-analytics
+  labels:
+    app: {{ include "openops.fullname" . }}-analytics
+    {{- include "openops.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.openops.analytics.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: "50%"
+  selector:
+    matchLabels:
+      app: {{ include "openops.fullname" . }}-analytics
+      {{- include "openops.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "openops.fullname" . }}-analytics
+        {{- include "openops.labels" . | nindent 8 }}
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: {{ include "openops.fullname" . }}-analytics
+      serviceAccountName: {{ include "openops.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.openops.serviceAccount.automount }}
+      {{- with .Values.openops.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+      - name: init
+        image: "{{ .Values.openops.initContainer.image }}:{{ .Values.openops.initContainer.tag }}"
+        imagePullPolicy: {{ .Values.openops.initContainer.imagePullPolicy }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - echo "Checking if Tables service is ready..";
+          while [ $(curl -so /dev/stderr --write-out "%{http_code}" "$TABLES_BACKEND_URL/openops-tables/api/_health/") != 200 ];
+          do 
+            echo "Waiting for Tables service to respond..";
+            sleep 2;
+          done;
+          echo "Tables service responded. Exiting!";
+        envFrom:
+        - configMapRef:
+            name: {{ include "openops.fullname" . }}-global-configmap
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+      containers:
+      - name: {{ include "openops.fullname" . }}-analytics
+        image: "{{ .Values.openops.analytics.image }}:{{ .Values.openops.analytics.tag }}"
+        imagePullPolicy: {{ .Values.openops.analytics.imagePullPolicy }}
+        ports:
+        - name: tcp-analytics
+          containerPort: 8088
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: {{ include "openops.fullname" . }}-analytics-configmap
+        - configMapRef:
+            name: {{ include "openops.fullname" . }}-global-configmap
+        env:
+        - name: DATABASE_USER
+          valueFrom:
+            secretKeyRef:
+              name: database-creds
+              key: database_user
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-creds
+              key: database_password
+        - name: OPS_ANALYTICS_PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: FRONTEND_URL
+        - name: OPS_ANALYTICS_PRIVATE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: ANALYTICS_BACKEND_URL
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-creds
+              key: admin_password
+        - name: POWERUSER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-creds
+              key: superuser_password
+        - name: SUPERSET_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: encryption-creds
+              key: encryption_key
+        resources:
+          {{- toYaml .Values.openops.analytics.resources | nindent 10 }}
+        readinessProbe:
+          tcpSocket:
+            port: 8088
+          {{- toYaml  .Values.openops.readinessProbe | nindent 10 }}
+        livenessProbe:
+          tcpSocket:
+            port: 8088
+          {{- toYaml  .Values.openops.livenessProbe | nindent 10 }}
+        {{- if .Values.openops.analytics.persistence.existingClaim }}
+        volumeMounts:
+        - name: analytics-data
+          mountPath: {{ .Values.openops.analytics.persistence.mountPath }}
+        {{- end }}
+      {{- if .Values.openops.analytics.persistence.existingClaim }}
+      volumes:
+      - name: analytics-data
+        persistentVolumeClaim:
+          claimName: {{ .Values.openops.analytics.persistence.existingClaim }}
+      {{- end }}
+      {{- with .Values.openops.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.openops.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.openops.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- if not .Values.openops.ingress.controller.istio.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openops.fullname" . }}-analytics
+  labels:
+    app: {{ include "openops.fullname" . }}-analytics
+    {{- include "openops.labels" . | nindent 4 }}
+spec:
+  ports:
+  - port: 80
+    targetPort: 8088
+    protocol: TCP
+    name: tcp-analytics
+  selector:
+    app: {{ include "openops.fullname" . }}-analytics
+{{- else }}
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: {{ include "openops.fullname" . }}-analytics
+spec:
+  gateways:
+  - {{ printf "istio-system/%s" .Values.openops.ingress.controller.istio.gateway }}
+  hosts:
+  - {{ .Values.openops.ingress.url }}
+  http:
+  - route:
+    - destination:
+        host: {{ printf "%s-analytics.%s.svc" .Release.Name .Release.Namespace }}
+        port:
+          number: 8088
+{{- end }}

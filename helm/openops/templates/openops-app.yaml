@@ -1,0 +1,265 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openops.fullname" . }}-app-configmap
+  labels:
+    {{- include "openops.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.openops.app.environment }}
+    {{ $key }}: {{ $value | quote }}
+  {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openops.fullname" . }}-app
+  labels:
+    app: {{ include "openops.fullname" . }}-app
+    {{- include "openops.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.openops.app.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: "50%"
+  selector:
+    matchLabels:
+      app: {{ include "openops.fullname" . }}-app
+      {{- include "openops.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "openops.fullname" . }}-app
+        {{- include "openops.labels" . | nindent 8 }}
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: {{ include "openops.fullname" . }}-app
+      serviceAccountName: {{ include "openops.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.openops.serviceAccount.automount }}
+      {{- with .Values.openops.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        sysctls:
+        - name: "net.ipv4.ip_unprivileged_port_start"
+          value: "80"
+        runAsNonRoot: true
+        runAsGroup: 65534
+        runAsUser: 65534
+      initContainers:
+      - name: init
+        image: "{{ .Values.openops.initContainer.image }}:{{ .Values.openops.initContainer.tag }}"
+        imagePullPolicy: {{ .Values.openops.initContainer.imagePullPolicy }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - echo "Checking if Table and Analytics service is running..";
+          while [ $(curl -so /dev/stderr --write-out "%{http_code}" "$TABLES_BACKEND_URL/openops-tables/api/_health/") != 200 ];
+          do 
+            echo "Waiting for Table service to respond..";
+            sleep 2;
+          done;
+
+          while [ $(curl -Lso /dev/stderr --write-out "%{http_code}" "$ANALYTICS_BACKEND_URL") != 200 ];
+          do 
+            echo "Waiting for Analytics service to respond..";
+            sleep 2;
+          done;
+          echo "Table and Analytics service responded. Exiting!";
+        envFrom:
+        - configMapRef:
+            name: {{ include "openops.fullname" . }}-global-configmap
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+      containers:
+      - name: {{ include "openops.fullname" . }}-app
+        image: "{{ .Values.openops.app.image }}:{{ .Values.openops.app.tag }}"
+        imagePullPolicy: {{ .Values.openops.app.imagePullPolicy }}
+        ports:
+        - name: tcp-app
+          containerPort: 80
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: {{ include "openops.fullname" . }}-app-configmap
+        - configMapRef:
+            name: {{ include "openops.fullname" . }}-global-configmap
+        env:
+        - name: OPS_FRONTEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: FRONTEND_URL
+        - name: OPS_ENGINE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: ENGINE_BACKEND_URL
+        - name: OPS_OPENOPS_TABLES_DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: DATABASE_NAME
+        - name: OPS_OPENOPS_TABLES_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: TABLES_BACKEND_URL
+        - name: OPS_OPENOPS_TABLES_PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: FRONTEND_URL
+        - name: OPS_OPENOPS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-creds
+              key: admin_password
+        - name: OPS_ANALYTICS_PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: FRONTEND_URL
+        - name: OPS_ANALYTICS_PRIVATE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: ANALYTICS_BACKEND_URL
+        - name: OPS_OPENOPS_ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: openops-creds
+              key: admin_username
+        - name: OPS_ANALYTICS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openops-creds
+              key: admin_password
+        - name: OPS_POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: DATABASE_HOST
+        - name: OPS_POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: DATABASE_PORT
+        - name: OPS_POSTGRES_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: DATABASE_NAME
+        - name: OPS_POSTGRES_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: database-creds
+              key: database_user
+        - name: OPS_POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-creds
+              key: database_password
+        - name: OPS_REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: REDIS_PORT
+        - name: OPS_REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "openops.fullname" . }}-global-configmap
+              key: REDIS_URL
+        - name: OPS_REDIS_USER
+          valueFrom:
+            secretKeyRef:
+              name: redis-creds
+              key: redis_username
+        - name: OPS_REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-creds
+              key: redis_password
+        - name: OPS_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: encryption-creds
+              key: jwt_secret
+        - name: OPS_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: encryption-creds
+              key: encryption_key
+        resources:
+          {{- toYaml .Values.openops.app.resources | nindent 10 }}
+        readinessProbe:
+          tcpSocket:
+            port: 80
+          {{- toYaml  .Values.openops.readinessProbe | nindent 10 }}
+        livenessProbe:
+          tcpSocket:
+            port: 80
+          {{- toYaml  .Values.openops.livenessProbe | nindent 10 }}
+        volumeMounts:
+        - name: emptydir
+          mountPath: /var/lib/nginx/
+          subPath: tmp-dir
+        - name: emptydir
+          mountPath: /run
+          subPath: run-dir
+        - name: emptydir
+          mountPath: /var/log/nginx/
+          subPath: log-dir
+        {{- if .Values.openops.app.persistence.existingClaim }}
+        - name: app-data
+          mountPath: {{ .Values.openops.app.persistence.mountPath }}
+        {{- end }}
+      volumes:
+      - name: emptydir
+        emptyDir: {}
+      {{- if .Values.openops.app.persistence.existingClaim }}
+      - name: app-data
+        persistentVolumeClaim:
+          claimName: {{ .Values.openops.app.persistence.existingClaim }}
+      {{- end }}
+      {{- with .Values.openops.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.openops.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.openops.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- if not .Values.openops.ingress.controller.istio.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openops.fullname" . }}-app
+  labels:
+    app: {{ include "openops.fullname" . }}-app
+    {{- include "openops.labels" . | nindent 4 }}
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: tcp-app
+  selector:
+    app: {{ include "openops.fullname" . }}-app
+{{- end }}

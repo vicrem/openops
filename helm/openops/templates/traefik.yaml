@@ -1,0 +1,78 @@
+{{- if .Values.openops.ingress.controller.traefik.enabled }}
+{{- if .Values.openops.ingress.tls.enabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+{{- end }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "openops.fullname" . }}-ingress
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+spec:
+  entryPoints:
+  {{- range $entry := .Values.openops.ingress.controller.traefik.entrypoints }}
+  - {{ $entry }}
+  {{- end }}
+  routes:
+  - match: Host(`{{ .Values.openops.ingress.url }}`)
+    kind: Rule
+    services:
+    - name: {{ include "openops.fullname" . }}-app
+      port: 80
+      {{- if gt (.Values.openops.app.replicas | int ) 1 }}
+      sticky:
+        cookie:
+          httpOnly: true
+      {{- end }}
+    {{- if .Values.openops.ingress.tls.enabled }}
+    middlewares:
+    - name: redirect-to-https
+    {{- end }}
+
+  - match: Host(`{{ .Values.openops.ingress.url }}`) && PathPrefix(`/openops-analytics`)
+    kind: Rule
+    services:
+    - name: {{ include "openops.fullname" . }}-analytics
+      port: 80
+      {{- if gt (.Values.openops.analytics.replicas | int ) 1 }}
+      sticky:
+        cookie:
+          httpOnly: true
+      {{- end }}
+    {{- if .Values.openops.ingress.tls.enabled }}
+    middlewares:
+    - name: redirect-to-https
+    {{- end }}
+
+  - match: Host(`{{ .Values.openops.ingress.url }}`) && PathPrefix(`/openops-tables`)
+    kind: Rule
+    services:
+    - name: {{ include "openops.fullname" . }}-tables
+      port: 80
+      {{- if gt (.Values.openops.tables.replicas | int ) 1 }}
+      sticky:
+        cookie:
+          httpOnly: true
+      {{- end }}
+    {{- if .Values.openops.ingress.tls.enabled }}
+    middlewares:
+    - name: redirect-to-https
+    {{- end }}
+  {{- if .Values.openops.ingress.tls.enabled }}
+  {{- if .Values.openops.ingress.tls.secret }}
+  tls:
+  - secretName: {{ .Values.openops.ingress.tls.secret }}
+  {{- else }}
+  tls: {}
+  {{- end }}
+  {{- end }}
+{{- end }}
